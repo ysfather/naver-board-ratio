@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Naver 종목토론 비율 랭커</title>
+  <style>
+    body{margin:0;background:#0b1220;color:#e6edf5;font:14px/1.5 ui-sans-serif,system-ui}
+    .wrap{max-width:1100px;margin:20px auto;padding:0 16px}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+    .card{background:#10192f;border:1px solid #1e2a44;border-radius:12px;padding:12px}
+    label{display:block;color:#9fb0c7;margin-bottom:4px}
+    input,textarea{width:100%;background:#0e1626;border:1px solid #1f2b47;color:#e6edf5;padding:8px;border-radius:8px;outline:none}
+    textarea{min-height:70px;resize:vertical}
+    .btn{background:#5b9cff;color:#081121;border:0;padding:10px 14px;border-radius:8px;font-weight:700;cursor:pointer}
+    .btn.sec{background:#203559;color:#cfe0ff}
+    .row{display:flex;gap:10px;align-items:center}
+    table{width:100%;border-collapse:collapse;margin-top:10px;font-variant-numeric:tabular-nums}
+    th,td{border-bottom:1px solid #213250;padding:6px 8px;text-align:left}
+    .pill{display:inline-block;padding:3px 8px;border-radius:999px;background:#1a2c4d;color:#cfe0ff;margin-left:6px}
+    .status{white-space:pre-wrap;color:#9fb0c7}
+    .small{font-size:12px;color:#9fb0c7}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h2>Naver 종목토론 비율 랭커 <span class="small">GitHub+Render</span></h2>
+
+  <div class="grid">
+    <div class="card">
+      <label>시장별 시총 페이지 (marketPages)</label>
+      <input id="marketPages" type="number" value="3" min="1">
+    </div>
+    <div class="card">
+      <label>시총 상위 개수 (topn)</label>
+      <input id="topn" type="number" value="200" min="1">
+    </div>
+    <div class="card">
+      <label>게시판 페이지 (pages)</label>
+      <input id="pages" type="number" value="10" min="1">
+    </div>
+    <div class="card">
+      <label>표시 상위 N (topk)</label>
+      <input id="topk" type="number" value="50" min="1">
+    </div>
+    <div class="card">
+      <label>최소 yday (minYday)</label>
+      <input id="minYday" type="number" value="5" min="0">
+    </div>
+    <div class="card">
+      <label>동시성 (conc, 1~96)</label>
+      <input id="conc" type="number" value="24" min="1" max="96">
+    </div>
+    <div class="card">
+      <label>페이지 대기(ms) (delay)</label>
+      <input id="delay" type="number" value="20" min="0" max="500">
+    </div>
+    <div class="card">
+      <label>종목코드 직접 입력(쉼표/공백 구분, 미지정 시 자동)</label>
+      <textarea id="codes"></textarea>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:12px">
+    <button class="btn" id="run">실행</button>
+    <a id="excel" class="btn sec" href="#" style="display:none">Excel 다운로드</a>
+    <span class="pill" id="ts"></span>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="status" id="status">대기 중…</div>
+  </div>
+
+  <div id="tables" style="margin-top:12px"></div>
+</div>
+
+<script>
+const API = location.origin;
+
+function el(id){ return document.getElementById(id) }
+function text(n, s){ n.textContent = s }
+
+function tableHTML(rows, columns, caption){
+  const th = columns.map(c=>`<th style="${c.right?'text-align:right':''}">${c.label}</th>`).join('');
+  const trs = rows.map(r=>'<tr>' + columns.map(c=>{
+    let v = r[c.key];
+    if (v === null || v === undefined) v = '';
+    if (c.format) v = c.format(v, r);
+    return `<td style="${c.right?'text-align:right':''}">${v}</td>`;
+  }).join('') + '</tr>').join('');
+  return `<div class="card"><div style="font-weight:700;margin-bottom:6px">${caption||''}</div>
+    <table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></div>`;
+}
+
+async function runJob(){
+  const payload = {
+    marketPages: +el('marketPages').value,
+    topn: +el('topn').value,
+    pages: +el('pages').value,
+    topk: +el('topk').value,
+    minYday: +el('minYday').value,
+    conc: +el('conc').value,
+    delay: +el('delay').value,
+    codes: el('codes').value.trim()
+  };
+  el('tables').innerHTML = '';
+  text(el('status'), '작업 시작…');
+  const r = await fetch(API + '/api/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  const {job_id} = await r.json();
+  el('excel').style.display = 'none';
+
+  let done = false;
+  while(!done){
+    const s = await fetch(API + '/api/status?id=' + job_id).then(r=>r.json());
+    text(el('status'), `[${s.status}] ${s.progress}`);
+    if(s.status === 'done' && s.has_result){
+      done = true; break;
+    }
+    if(s.status === 'error'){
+      alert('오류: ' + (s.error || 'unknown'));
+      return;
+    }
+    await new Promise(res=>setTimeout(res, 1200));
+  }
+
+  const res = await fetch(API + '/api/result?id=' + job_id).then(r=>r.json());
+  el('excel').href = API + '/api/excel?id=' + job_id;
+  el('excel').style.display = 'inline-block';
+  text(el('ts'), `완료시각 ${res.ts} · 소요시간 ${res.duration}`);
+
+  const cols = [
+    {key:'code',label:'code'},
+    {key:'name',label:'name'},
+    {key:'today',label:'today',right:true},
+    {key:'yday',label:'yday',right:true},
+    {key:'ratio',label:'ratio',right:true,format:v=> v===''||v===null?'':Number(v).toFixed(2)},
+    {key:'todayreturn',label:'todayreturn',right:true,format:v=> v===''||v===null?'':((Number(v)>=0?'+':'')+Number(v).toFixed(2)+'%')},
+    {key:'note',label:'note'}
+  ];
+
+  const upCols = [
+    {key:'code',label:'code'},
+    {key:'name',label:'name'},
+    {key:'todayreturn',label:'todayreturn',right:true,format:v=> (Number(v)>=0?'+':'')+Number(v).toFixed(2)+'%'},
+    {key:'ratio',label:'ratio',right:true,format:v=> v===''||v===null?'':Number(v).toFixed(2)},
+    {key:'today',label:'today',right:true},
+    {key:'yday',label:'yday',right:true},
+  ];
+
+  const box = el('tables');
+  box.innerHTML =
+    tableHTML(res.rankTop, cols, `TOPK ${res.rankTop.length}`) +
+    tableHTML(res.top10_up, upCols, `TOPK: todayreturn 상위 10`) +
+    tableHTML(res.top10_down, upCols, `TOPK: todayreturn 하위 10`);
+}
+
+el('run').addEventListener('click', runJob);
+</script>
+</body>
+</html>
