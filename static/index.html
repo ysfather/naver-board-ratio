@@ -24,7 +24,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h2>Naver 종목토론 비율 랭커 <span class="small">GitHub+Render</span></h2>
+  <h2>Naver 종목토론 비율 랭커 <span class="small">GitHub + Render</span></h2>
 
   <div class="grid">
     <div class="card">
@@ -76,10 +76,8 @@
 
 <script>
 const API = location.origin;
-
 function el(id){ return document.getElementById(id) }
 function text(n, s){ n.textContent = s }
-
 function tableHTML(rows, columns, caption){
   const th = columns.map(c=>`<th style="${c.right?'text-align:right':''}">${c.label}</th>`).join('');
   const trs = rows.map(r=>'<tr>' + columns.map(c=>{
@@ -91,7 +89,6 @@ function tableHTML(rows, columns, caption){
   return `<div class="card"><div style="font-weight:700;margin-bottom:6px">${caption||''}</div>
     <table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></div>`;
 }
-
 async function runJob(){
   const payload = {
     marketPages: +el('marketPages').value,
@@ -108,26 +105,18 @@ async function runJob(){
   const r = await fetch(API + '/api/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
   const {job_id} = await r.json();
   el('excel').style.display = 'none';
-
   let done = false;
   while(!done){
     const s = await fetch(API + '/api/status?id=' + job_id).then(r=>r.json());
     text(el('status'), `[${s.status}] ${s.progress}`);
-    if(s.status === 'done' && s.has_result){
-      done = true; break;
-    }
-    if(s.status === 'error'){
-      alert('오류: ' + (s.error || 'unknown'));
-      return;
-    }
+    if(s.status === 'done' && s.has_result){ done = true; break; }
+    if(s.status === 'error'){ alert('오류: ' + (s.error || 'unknown')); return; }
     await new Promise(res=>setTimeout(res, 1200));
   }
-
   const res = await fetch(API + '/api/result?id=' + job_id).then(r=>r.json());
   el('excel').href = API + '/api/excel?id=' + job_id;
   el('excel').style.display = 'inline-block';
   text(el('ts'), `완료시각 ${res.ts} · 소요시간 ${res.duration}`);
-
   const cols = [
     {key:'code',label:'code'},
     {key:'name',label:'name'},
@@ -137,7 +126,6 @@ async function runJob(){
     {key:'todayreturn',label:'todayreturn',right:true,format:v=> v===''||v===null?'':((Number(v)>=0?'+':'')+Number(v).toFixed(2)+'%')},
     {key:'note',label:'note'}
   ];
-
   const upCols = [
     {key:'code',label:'code'},
     {key:'name',label:'name'},
@@ -146,14 +134,12 @@ async function runJob(){
     {key:'today',label:'today',right:true},
     {key:'yday',label:'yday',right:true},
   ];
-
   const box = el('tables');
   box.innerHTML =
     tableHTML(res.rankTop, cols, `TOPK ${res.rankTop.length}`) +
     tableHTML(res.top10_up, upCols, `TOPK: todayreturn 상위 10`) +
     tableHTML(res.top10_down, upCols, `TOPK: todayreturn 하위 10`);
 }
-
 el('run').addEventListener('click', runJob);
 </script>
 </body>
