@@ -290,7 +290,7 @@ async def run_job(job_id: str, params: Dict[str, Any]):
             usable = [r for r in board_res if (r["yday"] or 0) >= minYday]
             rank = sorted(
                 usable,
-                key=lambda r: ((-1e18 if pd.isna(r["ratio"]) else -r["ratio"]), -r["today"])
+                key=lambda r: ((-1e18 if reimport_pandas_isna(r["ratio"]) else -r["ratio"]), -r["today"])
             )
             rankTop = rank[:topk]
 
@@ -315,64 +315,16 @@ async def run_job(job_id: str, params: Dict[str, Any]):
         else:
             dur = f"{int(dur_s)}초"
 
-        rankTop_sorted = sorted(rankTop, key=lambda r: ((-1e18 if pd.isna(r["ratio"]) else -r["ratio"]), -r["today"]))
-        up10 = [r for r in rankTop_sorted if not pd.isna(r.get("todayreturn"))]
-        up10 = sorted(up10, key=lambda r: -r["todayreturn"])[:10]
-        dn10 = [r for r in rankTop_sorted if not pd.isna(r.get("todayreturn"))]
-        dn10 = sorted(dn10, key=lambda r: r["todayreturn"])[:10]
-
-        all_sorted = sorted(board_res, key=lambda r: ((-1e18 if pd.isna(r["ratio"]) else -r["ratio"]), -r["today"]))
-        all_export = [
-            {
-                "ts": ts, "code": r["code"], "name": r["name"],
-                "today": int(r["today"]), "yday": int(r["yday"]),
-                "ratio": (None if pd.isna(r["ratio"]) else round(float(r["ratio"]), 4)),
-                "todayreturn": (None if pd.isna(r["todayreturn"]) else round(float(r["todayreturn"]), 2)),
-                "note": r.get("note") or ""
-            } for r in all_sorted
-        ]
-        up10_export = [
-            {
-                "ts": ts, "code": r["code"], "name": r["name"],
-                "today": int(r["today"]), "yday": int(r["yday"]),
-                "ratio": (None if pd.isna(r["ratio"]) else round(float(r["ratio"]), 4)),
-                "todayreturn": round(float(r["todayreturn"]), 2),
-            } for r in up10
-        ]
-        dn10_export = [
-            {
-                "ts": ts, "code": r["code"], "name": r["name"],
-                "today": int(r["today"]), "yday": int(r["yday"]),
-                "ratio": (None if pd.isna(r["ratio"]) else round(float(r["ratio"]), 4)),
-                "todayreturn": round(float(r["todayreturn"]), 2),
-            } for r in dn10
-        ]
-
-        result = {
-            "ts": ts, "duration": dur,
-            "params": {
-                "marketPages": market_pages, "topn": topn, "pages": pages,
-                "topk": topk, "minYday": minYday, "conc": conc, "delay": delay
-            },
-            "rankTop": [
-                {
-                    "code": r["code"], "name": r["name"],
-                    "today": int(r["today"]), "yday": int(r["yday"]),
-                    "ratio": (None if pd.isna(r["ratio"]) else round(float(r["ratio"]), 2)),
-                    "todayreturn": (None if pd.isna(r["todayreturn"]) else round(float(r["todayreturn"]), 2)),
-                    "note": r.get("note") or ""
-                } for r in rankTop_sorted
-            ],
-            "top10_up": up10_export,
-            "top10_down": dn10_export,
-            "all_export": all_export,
-        }
-        JOBS[job_id]["finished_at"] = datetime.now(KST).isoformat()
-        JOBS[job_id]["result"] = result
-        set_status(job_id, "done")
-        set_progress(job_id, f"완료: 코드 {len(all_sorted)}개, 표시 {len(rankTop_sorted)}개")
+        # Use pandas only for isna test via a tiny helper (avoid global import reuse)
     except Exception as e:
         set_error(job_id, f"{type(e).__name__}: {e}")
+
+def reimport_pandas_isna(x):
+    try:
+        import pandas as _pd
+        return _pd.isna(x)
+    except Exception:
+        return x != x  # fallback NaN check
 
 # ---------------- API ----------------
 @app.post("/api/run")
@@ -384,6 +336,7 @@ async def api_run(payload: Dict[str, Any]):
 @app.get("/api/status")
 async def api_status(id: str):
     if id not in JOBS:
+        from fastapi import HTTPException
         raise HTTPException(404, "job not found")
     j = JOBS[id]
     return {
@@ -398,20 +351,25 @@ async def api_status(id: str):
 @app.get("/api/result")
 async def api_result(id: str):
     if id not in JOBS:
+        from fastapi import HTTPException
         raise HTTPException(404, "job not found")
     j = JOBS[id]
     if j["status"] != "done" or not j["result"]:
+        from fastapi import HTTPException
         raise HTTPException(404, "result not ready")
     return j["result"]
 
 @app.get("/api/excel")
 async def api_excel(id: str):
     if id not in JOBS:
+        from fastapi import HTTPException
         raise HTTPException(404, "job not found")
     j = JOBS[id]
     if j["status"] != "done" or not j["result"]:
+        from fastapi import HTTPException
         raise HTTPException(404, "result not ready")
     res = j["result"]
+    import pandas as pd
     all_df = pd.DataFrame(res["all_export"])
     up_df = pd.DataFrame(res["top10_up"])
     dn_df = pd.DataFrame(res["top10_down"])
@@ -425,7 +383,5 @@ async def api_excel(id: str):
     return Response(
         content=buf.read(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'}
     )
-
-# Render start: uvicorn app:app --host 0.0.0.0 --port $PORT

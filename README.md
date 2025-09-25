@@ -13,13 +13,15 @@ uvicorn app:app --reload
 1. 이 리포를 GitHub에 업로드
 2. https://render.com → New + → **Web Service**
 3. 리포 선택 → Environment **Python**
-4. Build Command: `pip install -r requirements.txt`
+4. Build Command: `pip install --upgrade pip setuptools wheel && pip install -r requirements.txt`
 5. Start Command: `uvicorn app:app --host 0.0.0.0 --port $PORT`
 6. Create Web Service → 배포 URL 접속
 
-### 운영 팁
-- **속도**: conc 24~48, delay 10~30ms 권장(과도하면 429 가능성↑)
-- **정확도**: minYday=5로 어제 글 0인 종목 제외
-- **부하 절감**: topn/pages를 줄이거나 codes에 직접 입력
-
-> 본 도구는 공개 웹페이지 파싱에 기반합니다. 대상 사이트의 구조가 바뀌면 엔드포인트/파싱 로직을 업데이트하세요.
+### Troubleshooting (Render build fails with pandas / CPython 3.13)
+- 증상: Render 로그에 `cpython-313`/`pandas/_libs/... CYTHON_UNUSED ...` 컴파일 오류
+- 원인: Render가 Python 3.13을 선택해 Pandas가 소스 빌드되며 실패
+- 해결:
+  1) **runtime.txt** → `3.11.9`
+  2) **render.yaml** → `PYTHON_VERSION=3.11.9`
+  3) Build Command에 `pip/setuptools/wheel` 업그레이드 포함
+  4) Render → Deploys → **Clear build cache & deploy**
